@@ -8,13 +8,16 @@
 #define NO_LINE_COUNT 20 // How many times motor will go forward if no line is detected
 // #define AGGRESSIVE_PID 1
 // Motor Pin definitions
-#define IN1 21
-#define IN2 18
+#define IN1 18
+#define IN2 19
 #define IN3 22
-#define IN4 5
-#define ENA 23
-#define ENB 15
+#define IN4 23
+#define ENA 21
+#define ENB 5
 
+
+const uint8_t BUTTON = 16;
+bool isOn = false;
 const int offsetA = 1;
 const int offsetB = 1;
 
@@ -216,23 +219,34 @@ void calculateMotorSpeed()
 void setup()
 {
   Serial.begin(115200);
-  qtr.setTypeRC();
   qtr.setTypeAnalog();
-  qtr.setSensorPins((const uint8_t[]){34, 35, 32, 33, 25, 26, 27, 14}, SensorCount); 
-  qtr.setEmitterPin(13);
-  for (uint8_t i = 0; i < 50; i++)
+  qtr.setSensorPins((const uint8_t[]){13, 12, 14, 27, 26, 25, 33, 32}, SensorCount); 
+  delay(250);
+  pinMode(2, OUTPUT);
+  pinMode(BUTTON, INPUT_PULLUP);
+  for (uint8_t i = 0; i < 400; i++)
   {
-    led.Update();
     qtr.calibrate();
-    delay(10);
+    digitalWrite(2, LOW);
   }
+    delay(10);
   leftPid.SetMode(QuickPID::Control::automatic);
   rightPid.SetMode(QuickPID::Control::automatic);
 }
 
 void loop()
 {
-  runner.execute();
+    if (digitalRead(BUTTON) == LOW)
+    isOn = !isOn;
+  if (isOn)
+  {
+    runner.execute();
+  }
+  else
+  {
+    motors.stop();
+    digitalWrite(2, LOW);
+  }
 }
 
 
