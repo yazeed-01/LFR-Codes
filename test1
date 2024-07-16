@@ -1,0 +1,99 @@
+#include <l298nx2.h>
+#include <QTRSensors.h>
+
+QTRSensors qtr;
+const uint8_t SensorCount = 8;
+uint16_t sensorValues[SensorCount];
+
+#define Kp 2
+#define Kd 40
+#define MaxSpeed 225
+#define BaseSpeed 155
+#define speedturn 100
+
+L298NX2 motorA;
+L298NX2 motorB;
+
+int lastError = 0;
+
+void setup()
+{
+    qtr.setTypeAnalog();
+    qtr.setSensorPins((const uint8_t[]){A0, A1, A2, A3, A4, A5, A6, A7}, SensorCount);
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(3000);
+
+    // Initialize motors
+    motorA.init(PWMA, AIN1, AIN2);
+    motorB.init(PWMB, BIN1, BIN2);
+
+    // Calibrate QTR sensors
+    for (int i = 0; i < 100; i++)
+    {
+        if (i < 25 || i >= 75)
+        {
+            move(0, speedturn, 1);
+            move(1, speedturn, 0);
+        }
+        else
+        {
+            move(0, speedturn, 0);
+            move(1, speedturn, 1);
+        }
+        qtr.calibrate();
+        delay(20);
+    }
+    delay(3000);
+}
+
+void loop()
+{
+    uint16_t position = qtr.readLineBlack(sensorValues);
+    
+    if (position > 6700)
+    {
+        move(1, speedturn, 1);
+        move(0, speedturn, 0);
+        return;
+    }
+    if (position < 300)
+    {
+        move(1, speedturn, 0);
+        move(0, speedturn, 1);
+        return;
+    }
+    
+    int error = position - 3500;
+    int motorSpeed = Kp * error + Kd * (error - lastError);
+    lastError = error;
+
+    int rightMotorSpeed = BaseSpeed + motorSpeed;
+    int leftMotorSpeed = BaseSpeed - motorSpeed;
+
+    if (rightMotorSpeed > MaxSpeed)
+        rightMotorSpeed = MaxSpeed;
+    if (leftMotorSpeed > MaxSpeed)
+        leftMotorSpeed = MaxSpeed;
+    if (rightMotorSpeed < 0)
+        rightMotorSpeed = 0;
+    if (leftMotorSpeed < 0)
+        leftMotorSpeed = 0;
+
+    move(1, rightMotorSpeed, 1);
+    move(0, leftMotorSpeed, 1);
+}
+
+void move(int motor, int speed, int direction)
+{
+    if (motor == 0)
+    {
+        motorA.setSpeed(speed);
+        motorA.setDirection(direction);
+    }
+    else if (motor == 1)
+    {
+        motorB.setSpeed(speed);
+        motorB.setDirection(direction);
+    }
+}
