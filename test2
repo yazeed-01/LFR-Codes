@@ -1,0 +1,59 @@
+#include <L298Nx2.h>
+#include <QTRSensors.h>
+
+#define Kp 0.4
+#define Kd 2
+#define rightMaxSpeed 114
+#define leftMaxSpeed 115
+#define rightBaseSpeed 85
+#define leftBaseSpeed 86 
+
+L298Nx2 motors;
+
+QTRSensors qtr;
+
+const uint8_t SensorCount = 8;
+unsigned int sensorValues[SensorCount];
+int lastError = 0;
+
+void setup() {
+  qtr.setTypeAnalog();
+  qtr.setSensorPins((const uint8_t[]){A0, A1, A2, A3, A4, A5, A6, A7}, SensorCount);
+
+  motors.init();
+  
+  for (int i = 0; i < 100; i++) {
+    if ( i  < 25 || i >= 75 ) {
+      turn_right();
+    } else {
+      turn_left();
+    }
+    qtr.calibrate();
+    delay(20);
+  }
+  delay(3000); 
+}
+
+void loop() {
+  unsigned int position = qtr.readLineBlack(sensorValues);
+  int error = position - 3500;
+  int motorSpeed = Kp * error + Kd * (error - lastError);
+  lastError = error;
+  int rightMotorSpeed = rightBaseSpeed + motorSpeed;
+  int leftMotorSpeed = leftBaseSpeed - motorSpeed;
+  
+  if (rightMotorSpeed > rightMaxSpeed) rightMotorSpeed = rightMaxSpeed;
+  if (leftMotorSpeed > leftMaxSpeed) leftMotorSpeed = leftMaxSpeed;
+  if (rightMotorSpeed < 0) rightMotorSpeed = 0;
+  if (leftMotorSpeed < 0) leftMotorSpeed = 0;
+  
+  motors.setSpeeds(leftMotorSpeed, rightMotorSpeed);
+}
+
+void turn_left() {
+  motors.setSpeeds(leftBaseSpeed, -rightBaseSpeed);
+}
+
+void turn_right() {
+  motors.setSpeeds(-leftBaseSpeed, rightBaseSpeed);
+}
