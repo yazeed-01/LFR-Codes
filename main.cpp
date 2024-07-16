@@ -1,253 +1,86 @@
-#include <Arduino.h>
 #include <QTRSensors.h>
-#include <L298N.h>
-#include <TaskScheduler.h>
-#include <QuickPID.h>
-
-#define HISTORY_SIZE 10  // Cumulative Weighted average to calculate last line detection
-#define NO_LINE_COUNT 20 // How many times motor will go forward if no line is detected
-// #define AGGRESSIVE_PID 1
-// Motor Pin definitions
-#define IN1 18
-#define IN2 19
-#define IN3 22
-#define IN4 23
-#define ENA 21
-#define ENB 5
-
-
-const uint8_t BUTTON = 16;
-bool isOn = false;
-const int offsetA = 1;
-const int offsetB = 1;
-
-L298N motorDriver(IN1, IN2, IN3, IN4, ENA, ENB);
-
-int leftMinSpeed = 0;
-int rightMinSpeed = 0;
-int leftMaxSpeed = 255;
-int rightMaxSpeed = 255;
-
-// Sensor definitions
-const uint8_t SensorCount = 8;
-uint16_t sensorValues[SensorCount];
-float sensorWeights[SensorCount] = {12.5, 2.5, 0.5, 0.1, 0.1, 0.5, 2.5, 12.5};
-
-u_int16_t readingHistory[SensorCount][HISTORY_SIZE];
-
 QTRSensors qtr;
 
-Scheduler runner;
+const uint8_t SensorCount = 8;
+uint16_t sensorValues[SensorCount];
 
-int32_t lineError = 0;
-u_int16_t lineThreshold = 800; // Sensor value Threshold for line detection
-u_int8_t noLineCount = 0;
+#define Kp 2 
+#define Kd 40
+#define MaxSpeed 225
+#define BaseSpeed 155
+#define speedturn 100
 
-// PID variables
-float Kp = 1;
-float Ki = 0.05;
-float Kd = 0.25;
+//int STBY = 10; 
+//Motor A
+int PWMA = 5; //for speed control
+int AIN1 = 11; //Direction
+int AIN2 = 12; //Direction
+//Motor B
+int PWMB = 3; //for speed control
+int BIN1 = 9; //Direction
+int BIN2 = 8; //Direction
 
-#ifdef AGGRESSIVE_PID
-// Aggressive PID Variables
-float AggresiveKp = 4;
-float AggresiveKi = 0.2;
-float AggresiveKd = 1;
-#endif
-
-float setPointLeft = 0;
-float inputLeft = 0;
-float outputLeft = 0;
-
-float setPointRight = 0;
-float inputRight = 0;
-float outputRight = 0;
-
-float prevError = 0;
-int8_t direction = 0;
-uint8_t pidType = 0;
-
-QuickPID leftPid(&inputLeft, &outputLeft, &setPointLeft, Kp, Ki, Kd, QuickPID::Action::direct);
-QuickPID rightPid(&inputRight, &outputRight, &setPointRight, Kp, Ki, Kd, QuickPID::Action::direct);
-
-int prevLeftMotorSpeed = 0;
-int prevRightMotorSpeed = 0;
-
-void readAndCalculateError();
-void calculateMotorSpeed();
-void setMotorSpeed();
-void recordHistory();
-Task readAndCalculateErrorTask(10, TASK_FOREVER, &readAndCalculateError, &runner, true);
-Task calculateMotorSpeedTask(10, TASK_FOREVER, &calculateMotorSpeed, &runner, true);
-Task setMotorSpeedTask(200, TASK_FOREVER, &setMotorSpeed, &runner, true);
-Task recordHistoryTask(30, TASK_FOREVER, &recordHistory, &runner, true);
-Task printTask(20, TASK_FOREVER, &print, &runner, true);
-
-u_int8_t findWhereLastLineWentFromHistory()
-{
-  int32_t historyLineError = 0;
-  // Iterate over the last 10 history arrays
-  for (int l = HISTORY_SIZE - 1; l >= 0; l--)
-  {
-    for (int i = 0; i < SensorCount; i++)
-    {
-      historyLineError += (i - 3.5) * sensorValues[i] * sensorWeights[i] * (l / 10);
-    }
-  }
-
-  // If no line detection is found in the last 10 history arrays, return -1
-  return historyLineError > 50? 1 : historyLineError < -50? -1
-                                                            : 0;
-}
-
-/*
-  Read And Calculate Error
-  ----
-  Get readings from sensor array and calculate error.
-*/
-void readAndCalculateError()
-{
-  // Read sensor values
-  qtr.readCalibrated(sensorValues);
-
-  // Check like exists
-  bool lineExists = false;
-  lineError = 0;
-  // Calculate line error and direction
-  for (int i = 0; i < SensorCount; i++)
-  {
-    lineError += (i - 3.5) * sensorValues[i] * sensorWeights[i];
-    if (sensorValues[i] > lineThreshold)
-    {
-      lineExists = true;
-    }
-  }
-
-  if (lineExists == false)
-  {
-    noLineCount++;
-    if (noLineCount > NO_LINE_COUNT)
-      lineError = findWhereLast
-        }
-  else
-  {
-    noLineCount = 0;
-  }
-}
-
-
-void recordHistory()
-{
-  u_int8_t count = 0;
-  for (int i = 0; i < SensorCount; i++)
-    if (sensorValues[i] > lineThreshold)
-      count++;
-
-  if (count == 0)
-    return;
-
-  for (int i = 0; i < SensorCount; i++)
-  {
-    for (int j = HISTORY_SIZE - 1; j > 0; j--)
-    {
-      readingHistory[i][j] = readingHistory[i][j - 1];
-    }
-    readingHistory[i][0] = map(sensorValues[i], 0, 1000, 0, 255);
-  }
-}
-
-
-void recordHistory()
-{
-  u_int8_t count = 0;
-  for (int i = 0; i < SensorCount; i++)
-    if (sensorValues[i] > lineThreshold)
-      count++;
-
-  if (count == 0)
-    return;
-
-  for (int i = 0; i < SensorCount; i++)
-  {
-    for (int j = HISTORY_SIZE - 1; j > 0; j--)
-    {
-      readingHistory[i][j] = readingHistory[i][j - 1];
-    }
-    readingHistory[i][0] = map(sensorValues[i], 0, 1000, 0, 255);
-  }
-}
-
-void setMotorSpeed()
-{
-  // Calculate speed for both motors.
-  // If line error is negative then right motor should have higher speed than left motor and vice versa.
-
-  // Calculate motor speed
-  int leftMotorSpeed = 0;
-  int rightMotorSpeed = 0;
-
-  // TODO: find diffrence between previous error and calculate diffrence.
-  // TODO: If diffrence is at peak, then set motor speed for sharp turn and decrease acceleration.
-
-  leftMotorSpeed = outputLeft;
-  rightMotorSpeed = outputRight;
-
-  prevLeftMotorSpeed = leftMotorSpeed;
-  prevRightMotorSpeed = rightMotorSpeed;
-  // Drive motors with calculated motor speed
-  motorDriver.setSpeed(0, 255 - leftMotorSpeed);
-  motorDriver.setSpeed(1, 255 - rightMotorSpeed);
-}
-
-/*
- Calculate motor speed and drive motors
-*/
-void calculateMotorSpeed()
-{
-  // Calculate motor speed from line error
-  inputRight = map(lineError, 0, 50000, 0, 255);
-  inputLeft = map(lineError, 0, -50000, 0, 255);
-
-#ifdef AGGRESSIVE_PID
-  (inputRight > 200) ? rightPid.SetTunings(AggresiveKp, AggresiveKi, AggresiveKd) : rightPid.SetTunings(Kp, Ki, Kd);
-  (inputLeft > 200) ? leftPid.SetTunings(AggresiveKp, AggresiveKi, AggresiveKd) : leftPid.SetTunings(Kp, Ki, Kd);
-#endif
-  rightPid.Compute();
-  leftPid.Compute();
-}
+int lastError=0;
 
 void setup()
-{
-  Serial.begin(115200);
-  qtr.setTypeAnalog();
-  qtr.setSensorPins((const uint8_t[]){13, 12, 14, 27, 26, 25, 33, 32}, SensorCount); 
-  delay(250);
-  pinMode(2, OUTPUT);
-  pinMode(BUTTON, INPUT_PULLUP);
-  for (uint8_t i = 0; i < 400; i++)
-  {
-    qtr.calibrate();
-    digitalWrite(2, LOW);
-  }
-    delay(10);
-  leftPid.SetMode(QuickPID::Control::automatic);
-  rightPid.SetMode(QuickPID::Control::automatic);
-}
+{   
+    qtr.setTypeAnalog();
+    qtr.setSensorPins((const uint8_t[]){A0, A1, A2, A3, A4, A5, A6,A7}, SensorCount);
+    //qtr.setEmitterPin(2);pinMode(STBY, OUTPUT);
+    pinMode(PWMA, OUTPUT);pinMode(AIN1, OUTPUT);pinMode(AIN2, OUTPUT);
+    pinMode(PWMB, OUTPUT);pinMode(BIN1, OUTPUT);pinMode(BIN2, OUTPUT);
+    delay(500);pinMode(LED_BUILTIN, OUTPUT);digitalWrite(LED_BUILTIN, HIGH);
+    delay(3000);
+    int i;
+    for (int i = 0; i < 100; i++)
+    {   
+        if ( i  < 25 || i >= 75 ) 
+        {   move(0,speedturn, 1);
+            move(1,speedturn, 0);
+        }
+        else
+        {   move(0,speedturn, 0);
+            move(1,speedturn, 1);
+        }
+        qtr.calibrate();delay(20);
+    }
+    delay(3000); 
+}  
 
 void loop()
-{
-    if (digitalRead(BUTTON) == LOW)
-    isOn = !isOn;
-  if (isOn)
-  {
-    runner.execute();
-  }
-  else
-  {
-    motors.stop();
-    digitalWrite(2, LOW);
-  }
+{   
+    uint16_t position = qtr.readLineBlack(sensorValues);
+    if(position>6700)
+    {   move(1, speedturn, 1);move(0, speedturn, 0);return;    
+    }
+    if(position<300)
+    {   move(1, speedturn, 0);move(0, speedturn, 1);return;
+    }
+    int error = position - 3500;
+    int motorSpeed = Kp * error + Kd * (error - lastError);
+    lastError = error;
+
+    int rightMotorSpeed = BaseSpeed + motorSpeed;
+    int leftMotorSpeed = BaseSpeed - motorSpeed;
+  
+    if (rightMotorSpeed > MaxSpeed ) rightMotorSpeed = MaxSpeed; 
+    if (leftMotorSpeed > MaxSpeed ) leftMotorSpeed = MaxSpeed;
+    if (rightMotorSpeed < 0)rightMotorSpeed = 0;    
+    if (leftMotorSpeed < 0)leftMotorSpeed = 0;
+    
+    move(1, rightMotorSpeed, 1);
+    move(0, leftMotorSpeed, 1);
 }
 
-
-
+void move(int motor, int speed, int direction)
+{   
+    boolean inPin1=HIGH,inPin2=LOW;
+    if(direction == 1){inPin1 = HIGH;inPin2 = LOW;}  
+    if(direction == 0){inPin1 = LOW; inPin2 = HIGH;}
+    if(motor == 0)
+    {   digitalWrite(AIN1, inPin1);digitalWrite(AIN2, inPin2);analogWrite(PWMA, speed);
+    }
+    if(motor == 1)
+    {   digitalWrite(BIN1, inPin1);digitalWrite(BIN2, inPin2);analogWrite(PWMB, speed);
+    }  
+}
